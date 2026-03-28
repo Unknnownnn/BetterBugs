@@ -10,9 +10,33 @@ const captureNetworkInput = document.getElementById('captureNetwork') as HTMLInp
 const captureConsoleInput = document.getElementById('captureConsole') as HTMLInputElement;
 const captureErrorsInput = document.getElementById('captureErrors') as HTMLInputElement;
 let lastLoadedConfig: ExtensionConfig = { ...DEFAULT_CONFIG };
+const CONFIG_KEY = 'bugcatcherConfig';
+const MESSAGE_TIMEOUT_MS = 5_000;
 
 function setStatus(text: string): void {
   statusEl.textContent = text;
+}
+
+async function sendMessageWithTimeout<T>(
+  message: BackgroundMessage,
+  timeoutMs: number = MESSAGE_TIMEOUT_MS,
+): Promise<T> {
+  return await new Promise<T>((resolve, reject) => {
+    const timeoutId = window.setTimeout(() => {
+      reject(new Error('Background request timed out.'));
+    }, timeoutMs);
+
+    chrome.runtime
+      .sendMessage(message)
+      .then((response) => {
+        window.clearTimeout(timeoutId);
+        resolve(response as T);
+      })
+      .catch((error: unknown) => {
+        window.clearTimeout(timeoutId);
+        reject(error);
+      });
+  });
 }
 
 function fillForm(config: ExtensionConfig): void {
@@ -26,9 +50,15 @@ function fillForm(config: ExtensionConfig): void {
 }
 
 async function loadConfig(): Promise<void> {
-  const response = (await chrome.runtime.sendMessage({ type: 'BC_CONFIG_REQUEST' })) as BackgroundMessage;
-  const payload = response.payload as ExtensionConfig | undefined;
-  fillForm({ ...DEFAULT_CONFIG, ...(payload ?? {}) });
+  try {
+    const result = await chrome.storage.sync.get(CONFIG_KEY);
+    const payload = result[CONFIG_KEY] as ExtensionConfig | undefined;
+    fillForm({ ...DEFAULT_CONFIG, ...(payload ?? {}) });
+    setStatus('');
+  } catch (error: unknown) {
+    setStatus(error instanceof Error ? error.message : 'Failed to load config.');
+    fillForm({ ...DEFAULT_CONFIG });
+  }
 }
 
 form.addEventListener('submit', async (event) => {
@@ -48,7 +78,14 @@ form.addEventListener('submit', async (event) => {
   };
 
   try {
-    await chrome.runtime.sendMessage({ type: 'BC_CONFIG_SAVE', payload: nextConfig });
+    setStatus('Saving...');
+    await chrome.storage.sync.set({ [CONFIG_KEY]: nextConfig });
+
+    // Best effort notification so background can refresh any in-memory state.
+    await sendMessageWithTimeout<BackgroundMessage>({ type: 'BC_CONFIG_SAVE', payload: nextConfig }).catch(
+      () => undefined,
+    );
+
     setStatus('Saved.');
   } catch (error: unknown) {
     setStatus(error instanceof Error ? error.message : 'Failed to save config.');

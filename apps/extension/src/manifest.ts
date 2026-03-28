@@ -18,7 +18,7 @@ const manifest = defineManifest({
       description: 'Trigger BugCatcher capture',
     },
   },
-  permissions: ['storage', 'activeTab', 'scripting'],
+  permissions: ['storage', 'activeTab', 'scripting', 'alarms'],
   host_permissions: ['<all_urls>'],
   background: {
     service_worker: 'src/background/index.ts',

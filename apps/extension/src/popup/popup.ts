@@ -6,9 +6,32 @@ const capturePreviewEl = document.getElementById('capturePreview') as HTMLDivEle
 const configSummaryEl = document.getElementById('configSummary') as HTMLDivElement;
 const openOptionsEl = document.getElementById('openOptions') as HTMLAnchorElement;
 const shortcutHintEl = document.getElementById('shortcutHint') as HTMLDivElement;
+const MESSAGE_TIMEOUT_MS = 10_000;
 
 function setStatus(text: string): void {
   statusEl.textContent = text;
+}
+
+async function sendMessageWithTimeout<T>(
+  message: BackgroundMessage,
+  timeoutMs: number = MESSAGE_TIMEOUT_MS,
+): Promise<T> {
+  return await new Promise<T>((resolve, reject) => {
+    const timeoutId = window.setTimeout(() => {
+      reject(new Error('Request timed out. Reload extension and retry.'));
+    }, timeoutMs);
+
+    chrome.runtime
+      .sendMessage(message)
+      .then((response) => {
+        window.clearTimeout(timeoutId);
+        resolve(response as T);
+      })
+      .catch((error: unknown) => {
+        window.clearTimeout(timeoutId);
+        reject(error);
+      });
+  });
 }
 
 chrome.runtime.onMessage.addListener((message: BackgroundMessage) => {
@@ -19,27 +42,38 @@ chrome.runtime.onMessage.addListener((message: BackgroundMessage) => {
 });
 
 async function loadConfig(): Promise<void> {
-  const response = (await chrome.runtime.sendMessage({ type: 'BC_CONFIG_REQUEST' })) as BackgroundMessage;
-  const config = response.payload as ExtensionConfig;
-  const keyState = config.projectKey ? 'set' : 'missing';
-  configSummaryEl.textContent = `API: ${config.apiBaseUrl} | Project: ${config.projectId} | Key: ${keyState}`;
+  try {
+    const response = await sendMessageWithTimeout<BackgroundMessage>({ type: 'BC_CONFIG_REQUEST' }, 5000);
+    const config = response.payload as ExtensionConfig;
+    const keyState = config.projectKey ? 'set' : 'missing';
+    configSummaryEl.textContent = `API: ${config.apiBaseUrl} | Project: ${config.projectId} | Key: ${keyState}`;
+  } catch {
+    configSummaryEl.textContent = 'Config unavailable. Reload extension and retry.';
+  }
 }
 
 async function loadCapturePreview(): Promise<void> {
-  const response = (await chrome.runtime.sendMessage({
-    type: 'BC_CAPTURE_PREVIEW_REQUEST',
-  })) as BackgroundMessage;
+  try {
+    const response = await sendMessageWithTimeout<BackgroundMessage>(
+      {
+        type: 'BC_CAPTURE_PREVIEW_REQUEST',
+      },
+      5000,
+    );
 
-  const preview = response.payload as
-    | { projectId: string; queueSize: number; url: string; title: string }
-    | undefined;
+    const preview = response.payload as
+      | { projectId: string; queueSize: number; url: string; title: string }
+      | undefined;
 
-  if (!preview) {
+    if (!preview) {
+      capturePreviewEl.textContent = 'Preview unavailable right now.';
+      return;
+    }
+
+    capturePreviewEl.textContent = `Preview -> Project: ${preview.projectId} | Queue: ${preview.queueSize} | Tab: ${preview.title}`;
+  } catch {
     capturePreviewEl.textContent = 'Preview unavailable right now.';
-    return;
   }
-
-  capturePreviewEl.textContent = `Preview -> Project: ${preview.projectId} | Queue: ${preview.queueSize} | Tab: ${preview.title}`;
 }
 
 async function loadShortcutHint(): Promise<void> {
@@ -58,7 +92,10 @@ captureButton.addEventListener('click', async () => {
   setStatus('Capturing and uploading...');
 
   try {
-    const response = (await chrome.runtime.sendMessage({ type: 'BC_CAPTURE_NOW' })) as BackgroundMessage;
+    const response = await sendMessageWithTimeout<BackgroundMessage>(
+      { type: 'BC_CAPTURE_NOW' },
+      20_000,
+    );
     const payload = response.payload as { ok: boolean; message: string; sessionId?: string };
     if (payload.ok) {
       setStatus(payload.sessionId ? `${payload.message} (id: ${payload.sessionId})` : payload.message);

@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -68,7 +69,17 @@ func main() {
 
 	// CORS middleware
 	router.Use(cors.New(cors.Config{
-		AllowOrigins:     []string{"http://localhost:3000", "http://localhost:3001"},
+		AllowOriginFunc: func(origin string) bool {
+			if origin == "" {
+				return true
+			}
+
+			if origin == "http://localhost:3000" || origin == "http://localhost:3001" {
+				return true
+			}
+
+			return strings.HasPrefix(origin, "chrome-extension://")
+		},
 		AllowMethods:     []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
 		AllowHeaders:     []string{"Origin", "Content-Type", "Accept", "X-Project-Key"},
 		ExposeHeaders:    []string{"Content-Length"},
