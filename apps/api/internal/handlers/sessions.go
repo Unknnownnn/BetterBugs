@@ -4,7 +4,10 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"fmt"
 	"net/http"
+	"net/url"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -50,8 +53,8 @@ func (h *SessionHandler) Create(c *gin.Context) {
 	var payload models.SessionPayload
 	if err := c.ShouldBindJSON(&payload); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
-			"error":   "Invalid request payload",
-			"code":    "INVALID_PAYLOAD",
+			"error": "Invalid request payload",
+			"code":  "INVALID_PAYLOAD",
 			"details": []ValidationIssue{{
 				Field: "payload",
 				Issue: err.Error(),
@@ -96,6 +99,8 @@ func (h *SessionHandler) Create(c *gin.Context) {
 			stats.StateSnapshots++
 		}
 	}
+
+	triageSummary := buildTriageSummary(payload, stats)
 
 	// Insert events first so session can persist event references.
 	now := time.Now()
@@ -161,10 +166,11 @@ func (h *SessionHandler) Create(c *gin.Context) {
 				},
 			},
 		},
-		EventRefs:   eventRefs,
-		Stats:       stats,
-		CreatedAt:   now,
-		UpdatedAt:   now,
+		EventRefs:     eventRefs,
+		Stats:         stats,
+		TriageSummary: triageSummary,
+		CreatedAt:     now,
+		UpdatedAt:     now,
 	}
 
 	// Insert session metadata.
@@ -353,31 +359,33 @@ func (h *SessionHandler) List(c *gin.Context) {
 		}
 
 		summary := models.SessionSummary{
-			ID:        session.ID,
-			SessionID: session.SessionID,
-			URL:       session.URL,
-			Title:     session.Title,
-			Timestamp: session.Timestamp,
-			Error:     session.Error,
-			Stats:     session.Stats,
-			Tags:      session.Tags,
-			CommentCount: len(session.Comments),
-			Media:     session.Media,
-			CreatedAt: session.CreatedAt,
+			ID:            session.ID,
+			SessionID:     session.SessionID,
+			URL:           session.URL,
+			Title:         session.Title,
+			Timestamp:     session.Timestamp,
+			Error:         session.Error,
+			Stats:         session.Stats,
+			Tags:          session.Tags,
+			CommentCount:  len(session.Comments),
+			Media:         session.Media,
+			TriageSummary: session.TriageSummary,
+			CreatedAt:     session.CreatedAt,
 		}
 
 		item := gin.H{
-			"id":           summary.ID,
-			"sessionId":    summary.SessionID,
-			"url":          summary.URL,
-			"title":        summary.Title,
-			"timestamp":    summary.Timestamp,
-			"error":        summary.Error,
-			"stats":        summary.Stats,
-			"tags":         summary.Tags,
-			"commentCount": summary.CommentCount,
-			"media":        summary.Media,
-			"createdAt":    summary.CreatedAt,
+			"id":            summary.ID,
+			"sessionId":     summary.SessionID,
+			"url":           summary.URL,
+			"title":         summary.Title,
+			"timestamp":     summary.Timestamp,
+			"error":         summary.Error,
+			"stats":         summary.Stats,
+			"tags":          summary.Tags,
+			"commentCount":  summary.CommentCount,
+			"media":         summary.Media,
+			"triageSummary": summary.TriageSummary,
+			"createdAt":     summary.CreatedAt,
 		}
 
 		signedMedia := h.buildSignedMediaURLs(session.Media)
@@ -396,6 +404,228 @@ func (h *SessionHandler) List(c *gin.Context) {
 		"sortBy":    sortBy,
 		"sortOrder": sortOrder,
 	})
+}
+
+func buildTriageSummary(payload models.SessionPayload, stats models.Stats) models.TriageSummary {
+	summary := models.TriageSummary{
+		StatusHistogram: make(map[string]int),
+	}
+
+	if payload.Error != nil {
+		summary.TopErrorMessage = strings.TrimSpace(payload.Error.Message)
+	}
+
+	var networkDurations []int64
+	failingEndpointCounts := make(map[string]int)
+
+	for _, event := range payload.Events {
+		timestamp := event.Timestamp
+		eventPayload := toStringMap(event.Payload)
+
+		switch event.Type {
+		case "error":
+			summary.ErrorCount++
+			if summary.FirstErrorAtMs == 0 || (timestamp > 0 && timestamp < summary.FirstErrorAtMs) {
+				summary.FirstErrorAtMs = timestamp
+			}
+			if timestamp > summary.LastErrorAtMs {
+				summary.LastErrorAtMs = timestamp
+			}
+			if summary.TopErrorMessage == "" {
+				summary.TopErrorMessage = getString(eventPayload, "message")
+			}
+
+		case "console":
+			level := strings.ToLower(getString(eventPayload, "level"))
+			if level == "error" {
+				summary.ConsoleErrorCount++
+			}
+			if level == "warn" || level == "warning" {
+				summary.ConsoleWarnCount++
+			}
+
+		case "network":
+			summary.RequestCount++
+			status := getInt(eventPayload, "status")
+			if status > 0 {
+				summary.StatusHistogram[strconv.Itoa(status)]++
+				if status >= 400 {
+					summary.FailedRequestCount++
+					method := strings.ToUpper(getString(eventPayload, "method"))
+					if method == "" {
+						method = "GET"
+					}
+					path := extractPath(getString(eventPayload, "url"))
+					key := method + " " + path
+					failingEndpointCounts[key]++
+				}
+			}
+
+			timing := toStringMap(eventPayload["timing"])
+			duration := getInt64(timing, "duration")
+			if duration > 0 {
+				networkDurations = append(networkDurations, duration)
+			}
+
+		case "state":
+			summary.StateSnapshotCount++
+			if getBool(eventPayload, "changed") {
+				summary.ChangedSnapshotCount++
+			}
+		}
+	}
+
+	if summary.TopErrorMessage == "" && payload.Error != nil {
+		summary.TopErrorMessage = strings.TrimSpace(payload.Error.Message)
+	}
+
+	if len(networkDurations) > 0 {
+		sort.Slice(networkDurations, func(i, j int) bool {
+			return networkDurations[i] < networkDurations[j]
+		})
+		index := (95*len(networkDurations) - 1) / 100
+		if index < 0 {
+			index = 0
+		}
+		if index >= len(networkDurations) {
+			index = len(networkDurations) - 1
+		}
+		summary.P95NetworkDurationMs = networkDurations[index]
+	}
+
+	type endpointCounter struct {
+		method string
+		path   string
+		count  int
+	}
+
+	endpointCounts := make([]endpointCounter, 0, len(failingEndpointCounts))
+	for key, count := range failingEndpointCounts {
+		parts := strings.SplitN(key, " ", 2)
+		method := "GET"
+		path := "/"
+		if len(parts) > 0 && strings.TrimSpace(parts[0]) != "" {
+			method = parts[0]
+		}
+		if len(parts) == 2 && strings.TrimSpace(parts[1]) != "" {
+			path = parts[1]
+		}
+		endpointCounts = append(endpointCounts, endpointCounter{method: method, path: path, count: count})
+	}
+
+	sort.Slice(endpointCounts, func(i, j int) bool {
+		if endpointCounts[i].count == endpointCounts[j].count {
+			return endpointCounts[i].path < endpointCounts[j].path
+		}
+		return endpointCounts[i].count > endpointCounts[j].count
+	})
+
+	for i := 0; i < len(endpointCounts) && i < 3; i++ {
+		summary.TopFailingEndpoints = append(summary.TopFailingEndpoints, models.NetworkEndpointTriage{
+			Method: endpointCounts[i].method,
+			Path:   endpointCounts[i].path,
+			Count:  endpointCounts[i].count,
+		})
+	}
+
+	if len(summary.StatusHistogram) == 0 {
+		summary.StatusHistogram = nil
+	}
+
+	summary.HasUsefulSignal =
+		summary.ErrorCount > 0 ||
+			summary.ConsoleErrorCount > 0 ||
+			summary.FailedRequestCount > 0 ||
+			summary.StateSnapshotCount > 0 ||
+			stats.ConsoleCount > 0 ||
+			stats.NetworkCount > 0
+
+	return summary
+}
+
+func toStringMap(value interface{}) map[string]interface{} {
+	mapped, ok := value.(map[string]interface{})
+	if ok {
+		return mapped
+	}
+	return map[string]interface{}{}
+}
+
+func getString(source map[string]interface{}, key string) string {
+	value, ok := source[key]
+	if !ok || value == nil {
+		return ""
+	}
+	if cast, ok := value.(string); ok {
+		return strings.TrimSpace(cast)
+	}
+	return strings.TrimSpace(fmt.Sprint(value))
+}
+
+func getInt(source map[string]interface{}, key string) int {
+	return int(getInt64(source, key))
+}
+
+func getInt64(source map[string]interface{}, key string) int64 {
+	value, ok := source[key]
+	if !ok || value == nil {
+		return 0
+	}
+
+	switch cast := value.(type) {
+	case int:
+		return int64(cast)
+	case int32:
+		return int64(cast)
+	case int64:
+		return cast
+	case float32:
+		return int64(cast)
+	case float64:
+		return int64(cast)
+	case string:
+		parsed, err := strconv.ParseInt(strings.TrimSpace(cast), 10, 64)
+		if err == nil {
+			return parsed
+		}
+	}
+
+	return 0
+}
+
+func getBool(source map[string]interface{}, key string) bool {
+	value, ok := source[key]
+	if !ok || value == nil {
+		return false
+	}
+
+	switch cast := value.(type) {
+	case bool:
+		return cast
+	case string:
+		parsed, err := strconv.ParseBool(strings.TrimSpace(cast))
+		if err == nil {
+			return parsed
+		}
+	}
+
+	return false
+}
+
+func extractPath(rawURL string) string {
+	trimmed := strings.TrimSpace(rawURL)
+	if trimmed == "" {
+		return "/"
+	}
+
+	parsed, err := url.Parse(trimmed)
+	if err != nil {
+		return trimmed
+	}
+	if parsed.Path == "" {
+		return "/"
+	}
+	return parsed.Path
 }
 
 // GetByID godoc

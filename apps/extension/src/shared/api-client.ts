@@ -19,6 +19,7 @@ export interface ApiSession {
     networkCount: number;
     stateSnapshots: number;
   };
+  triageSummary?: ApiTriageSummary;
   tags: string[];
   commentCount: number;
   media: {
@@ -29,6 +30,27 @@ export interface ApiSession {
     domSnapshots?: string[];
   };
   createdAt: string;
+}
+
+export interface ApiTriageSummary {
+  hasUsefulSignal: boolean;
+  errorCount?: number;
+  firstErrorAtMs?: number;
+  lastErrorAtMs?: number;
+  topErrorMessage?: string;
+  consoleErrorCount?: number;
+  consoleWarnCount?: number;
+  requestCount?: number;
+  failedRequestCount?: number;
+  statusHistogram?: Record<string, number>;
+  p95NetworkDurationMs?: number;
+  topFailingEndpoints?: Array<{
+    method: string;
+    path: string;
+    count: number;
+  }>;
+  stateSnapshotCount?: number;
+  changedSnapshotCount?: number;
 }
 
 export interface ApiSessionDetail extends ApiSession {

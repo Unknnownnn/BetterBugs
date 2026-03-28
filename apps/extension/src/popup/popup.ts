@@ -592,8 +592,9 @@ chrome.runtime.onMessage.addListener((message: BackgroundMessage) => {
 });
 
 function computeSeverity(session: ApiSession): SessionSeverity {
+  const triage = session.triageSummary;
   let score = 0;
-  if (session.error) {
+  if (session.error || (triage?.errorCount ?? 0) > 0) {
     score += 60;
     const type = (session.error.type || '').toLowerCase();
     if (type.includes('type') || type.includes('reference') || type.includes('syntax')) {
@@ -601,9 +602,15 @@ function computeSeverity(session: ApiSession): SessionSeverity {
     }
   }
 
-  score += Math.min(session.stats.consoleCount, 50) * 0.4;
-  score += Math.min(session.stats.networkCount, 50) * 0.25;
-  score += Math.min(session.stats.stateSnapshots, 30) * 0.2;
+  const consoleCount = triage?.consoleErrorCount ?? session.stats.consoleCount;
+  const networkCount = triage?.requestCount ?? session.stats.networkCount;
+  const stateCount = triage?.stateSnapshotCount ?? session.stats.stateSnapshots;
+  const failedRequests = triage?.failedRequestCount ?? 0;
+
+  score += Math.min(consoleCount, 50) * 0.4;
+  score += Math.min(networkCount, 50) * 0.25;
+  score += Math.min(stateCount, 30) * 0.2;
+  score += Math.min(failedRequests, 20) * 1.5;
 
   if (score >= 85) {
     return { level: 'critical', score, label: 'Critical' };
@@ -712,8 +719,13 @@ function renderSessionList(sessions: ApiSession[]): void {
       const title = escapeHtml(session.title || 'Untitled Session');
       const url = escapeHtml(session.url || 'unknown-url');
       const createdAt = escapeHtml(new Date(session.createdAt).toLocaleString());
-      const summary = escapeHtml(session.error?.message || 'No captured error');
+      const summary = escapeHtml(session.triageSummary?.topErrorMessage || session.error?.message || 'No captured error');
       const previewImage = getSessionPreviewImage(session);
+      const failedRequests = session.triageSummary?.failedRequestCount ?? 0;
+      const p95 = session.triageSummary?.p95NetworkDurationMs;
+      const triageMeta = failedRequests > 0
+        ? `failures ${failedRequests}${typeof p95 === 'number' ? ` | p95 ${p95}ms` : ''}`
+        : 'failures 0';
 
       return `
         <div class="session-item severity-${severity.level}" data-session-id="${escapeHtml(session.sessionId)}">
@@ -734,6 +746,7 @@ function renderSessionList(sessions: ApiSession[]): void {
               <div class="session-meta">${summary}</div>
               <div class="session-meta">${createdAt}</div>
               <div class="session-meta">console ${session.stats.consoleCount} | network ${session.stats.networkCount} | state ${session.stats.stateSnapshots}</div>
+              <div class="session-meta">${triageMeta}</div>
             </div>
           </div>
           <div class="session-actions">

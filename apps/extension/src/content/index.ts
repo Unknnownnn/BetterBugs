@@ -45,6 +45,7 @@ const STATE_CAPTURE_INTERVAL_MS = 5_000;
 let config: ExtensionConfig = { ...DEFAULT_CONFIG };
 const nextSequence = createSequenceCounter();
 const stateCollector = createStateCollector();
+const PAGE_CAPTURE_SOURCE = 'BUGCATCHER_PAGE_CAPTURE_CHANNEL_V1';
 
 type BugCatcherStateAdapterApiWindow = Window & {
   __BUGCATCHER_REGISTER_STATE_ADAPTER__?: (
@@ -67,6 +68,19 @@ function createEvent(type: CaptureEvent['type'], payload: CaptureEvent['payload'
     id: uid(),
     type,
     timestamp: Date.now(),
+    payload,
+  };
+}
+
+function createEventAt(
+  type: CaptureEvent['type'],
+  payload: CaptureEvent['payload'],
+  timestamp: number,
+): CaptureEvent {
+  return {
+    id: uid(),
+    type,
+    timestamp,
     payload,
   };
 }
@@ -142,6 +156,11 @@ function emitNetworkEvent(payload: NetworkEventPayload): void {
 function emitStateEvents(reason: StateEventPayload['reason']): void {
   const snapshots = stateCollector.collectSnapshots();
   for (const snapshot of snapshots) {
+    // Keep initial/flush snapshots for context, but skip unchanged interval noise.
+    if (reason === 'interval' && !snapshot.changed) {
+      continue;
+    }
+
     const sanitizedStateData = sanitizeStructuredSegment(
       snapshot.data,
       `state.${snapshot.source}`,
@@ -195,6 +214,63 @@ function registerSanitizerRuntimeApi(): void {
   apiWindow.__BUGCATCHER_REGISTER_SANITIZER_RULE__ = (rule) => {
     registerSanitizerRule(rule);
   };
+}
+
+function bridgePageWorldCapture(): void {
+  window.addEventListener('message', (event: MessageEvent<unknown>) => {
+    if (event.source !== window) {
+      return;
+    }
+
+    const raw = event.data;
+    if (!raw || typeof raw !== 'object') {
+      return;
+    }
+
+    const envelope = raw as {
+      source?: string;
+      kind?: 'event' | 'environment';
+      payload?: unknown;
+    };
+
+    if (envelope.source !== PAGE_CAPTURE_SOURCE) {
+      return;
+    }
+
+    if (envelope.kind === 'environment' && envelope.payload) {
+      postMessage({ type: 'BC_ENVIRONMENT', payload: envelope.payload as EnvironmentInfo });
+      return;
+    }
+
+    if (envelope.kind !== 'event' || !envelope.payload || typeof envelope.payload !== 'object') {
+      return;
+    }
+
+    const eventPayload = envelope.payload as {
+      type?: CaptureEvent['type'];
+      timestamp?: number;
+      payload?: CaptureEvent['payload'];
+    };
+
+    const type = eventPayload.type;
+    if (type !== 'console' && type !== 'network' && type !== 'error' && type !== 'state') {
+      return;
+    }
+
+    if (!eventPayload.payload) {
+      return;
+    }
+
+    const timestamp =
+      typeof eventPayload.timestamp === 'number' && Number.isFinite(eventPayload.timestamp)
+        ? eventPayload.timestamp
+        : Date.now();
+
+    postMessage({
+      type: 'BC_EVENT',
+      payload: createEventAt(type, eventPayload.payload, timestamp),
+    });
+  });
 }
 
 function toAbsoluteUrl(url: string): string {
@@ -657,6 +733,7 @@ chrome.runtime.onMessage.addListener((message: BackgroundMessage, _sender, sendR
 (async () => {
   await loadConfig();
   registerSanitizerRuntimeApi();
+  bridgePageWorldCapture();
   postMessage({ type: 'BC_ENVIRONMENT', payload: detectEnvironment() });
   captureConsole();
   captureErrors();

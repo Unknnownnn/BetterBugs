@@ -12,6 +12,11 @@ const DEFAULT_VIEWPORT_HEIGHT = 720;
 const DEFAULT_LANGUAGE = 'en-US';
 const FALLBACK_UPLOAD_URL = 'https://localhost/';
 const ALLOWED_EVENT_TYPES = new Set(['console', 'network', 'state', 'error']);
+const MAX_TEXT_LENGTH = 600;
+const MAX_BODY_LENGTH = 2000;
+const MAX_HEADERS = 20;
+const MAX_STATE_JSON_LENGTH = 4000;
+const MAX_CONSOLE_ARGS = 6;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
@@ -64,6 +69,208 @@ function normalizeEventTimestamp(value: unknown, fallback: number): number {
   return fallback;
 }
 
+function asTrimmedString(value: unknown, maxLength = MAX_TEXT_LENGTH): string {
+  if (typeof value !== 'string') {
+    if (value === null || value === undefined) {
+      return '';
+    }
+    return String(value).slice(0, maxLength);
+  }
+  return value.trim().slice(0, maxLength);
+}
+
+function asFiniteNumber(value: unknown, fallback = 0): number {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return value;
+  }
+  if (typeof value === 'string') {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) {
+      return parsed;
+    }
+  }
+  return fallback;
+}
+
+function sanitizeHeaders(value: unknown): Record<string, string> {
+  if (!isRecord(value)) {
+    return {};
+  }
+
+  const entries = Object.entries(value).slice(0, MAX_HEADERS);
+  const normalized: Record<string, string> = {};
+
+  for (const [key, headerValue] of entries) {
+    const lowered = key.toLowerCase();
+    if (lowered.includes('authorization') || lowered.includes('cookie') || lowered.includes('token')) {
+      normalized[key] = '[redacted]';
+      continue;
+    }
+    normalized[key] = asTrimmedString(headerValue, 200);
+  }
+
+  return normalized;
+}
+
+function normalizeConsoleArgs(value: unknown): unknown[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value.slice(0, MAX_CONSOLE_ARGS).map((arg) => {
+    if (typeof arg === 'string') {
+      return asTrimmedString(arg, 300);
+    }
+    if (typeof arg === 'number' || typeof arg === 'boolean' || arg === null) {
+      return arg;
+    }
+    if (Array.isArray(arg)) {
+      return `[array:${arg.length}]`;
+    }
+    if (isRecord(arg)) {
+      const keys = Object.keys(arg).slice(0, 6);
+      return `[object:${keys.join(',')}]`;
+    }
+    return String(arg).slice(0, 120);
+  });
+}
+
+function normalizeStateData(value: unknown): unknown {
+  if (value === null || value === undefined) {
+    return null;
+  }
+
+  if (typeof value === 'string') {
+    return asTrimmedString(value, MAX_STATE_JSON_LENGTH);
+  }
+
+  try {
+    const serialized = JSON.stringify(value);
+    if (!serialized) {
+      return null;
+    }
+    if (serialized.length <= MAX_STATE_JSON_LENGTH) {
+      return JSON.parse(serialized) as unknown;
+    }
+
+    return {
+      _summary: 'state-truncated',
+      preview: serialized.slice(0, MAX_STATE_JSON_LENGTH),
+      originalSize: serialized.length,
+    };
+  } catch {
+    return '[unserializable-state]';
+  }
+}
+
+function normalizeConsolePayload(payload: unknown): CaptureEvent['payload'] {
+  const source = isRecord(payload) ? payload : {};
+  const level = asTrimmedString(source.level, 20).toLowerCase();
+
+  return {
+    level: (level === 'log' || level === 'info' || level === 'warn' || level === 'error' || level === 'debug'
+      ? level
+      : 'log') as 'log' | 'info' | 'warn' | 'error' | 'debug',
+    message: asTrimmedString(source.message, MAX_TEXT_LENGTH),
+    args: normalizeConsoleArgs(source.args),
+    stack: asTrimmedString(source.stack, 2000) || undefined,
+    sequence: Math.trunc(asFiniteNumber(source.sequence, 0)) || undefined,
+  };
+}
+
+function normalizeNetworkPayload(payload: unknown): CaptureEvent['payload'] {
+  const source = isRecord(payload) ? payload : {};
+  const request = isRecord(source.request) ? source.request : {};
+  const response = isRecord(source.response) ? source.response : {};
+  const timing = isRecord(source.timing) ? source.timing : {};
+
+  return {
+    method: asTrimmedString(source.method, 20).toUpperCase() || 'GET',
+    url: normalizeSessionUrl(source.url),
+    status: Math.trunc(asFiniteNumber(source.status, 0)),
+    graphql: isRecord(source.graphql)
+      ? {
+          operationType: asTrimmedString(source.graphql.operationType, 20) as
+            | 'query'
+            | 'mutation'
+            | 'subscription'
+            | 'unknown',
+          operationName: asTrimmedString(source.graphql.operationName, 120) || undefined,
+        }
+      : undefined,
+    request: {
+      headers: sanitizeHeaders(request.headers),
+      body: asTrimmedString(request.body, MAX_BODY_LENGTH) || undefined,
+      truncated: Boolean(request.truncated),
+    },
+    response: {
+      headers: sanitizeHeaders(response.headers),
+      body: asTrimmedString(response.body, MAX_BODY_LENGTH) || undefined,
+      size: Math.max(0, Math.trunc(asFiniteNumber(response.size, 0))),
+      truncated: Boolean(response.truncated),
+    },
+    timing: {
+      start: Math.trunc(asFiniteNumber(timing.start, Date.now())),
+      end: Math.trunc(asFiniteNumber(timing.end, Date.now())),
+      duration: Math.max(0, Math.trunc(asFiniteNumber(timing.duration, 0))),
+    },
+  };
+}
+
+function normalizeErrorPayload(payload: unknown): CaptureEvent['payload'] {
+  const source = isRecord(payload) ? payload : {};
+  const severity = asTrimmedString(source.severity, 24).toLowerCase();
+
+  return {
+    message: asTrimmedString(source.message, MAX_TEXT_LENGTH),
+    stack: asTrimmedString(source.stack, 2500) || undefined,
+    sourceMappedStack: asTrimmedString(source.sourceMappedStack, 2500) || undefined,
+    sourceMapStatus: asTrimmedString(source.sourceMapStatus, 20) as
+      | 'mapped'
+      | 'unmapped'
+      | 'resolver-error'
+      | undefined,
+    type: asTrimmedString(source.type, 120) || undefined,
+    severity: (severity === 'error' || severity === 'unhandledrejection' ? severity : undefined) as
+      | 'error'
+      | 'unhandledrejection'
+      | undefined,
+    sequence: Math.trunc(asFiniteNumber(source.sequence, 0)) || undefined,
+    source: asTrimmedString(source.source, 300) || undefined,
+    line: Math.trunc(asFiniteNumber(source.line, 0)) || undefined,
+    column: Math.trunc(asFiniteNumber(source.column, 0)) || undefined,
+  };
+}
+
+function normalizeStatePayload(payload: unknown): CaptureEvent['payload'] {
+  const source = isRecord(payload) ? payload : {};
+  const reason = asTrimmedString(source.reason, 30);
+
+  return {
+    source: asTrimmedString(source.source, 80) || 'unknown',
+    data: normalizeStateData(source.data),
+    changed: Boolean(source.changed),
+    reason: (reason === 'init' || reason === 'interval' || reason === 'flush' || reason === 'adapter-error'
+      ? reason
+      : undefined) as 'init' | 'interval' | 'flush' | 'adapter-error' | undefined,
+    adapterName: asTrimmedString(source.adapterName, 80) || undefined,
+    errorMessage: asTrimmedString(source.errorMessage, MAX_TEXT_LENGTH) || undefined,
+  };
+}
+
+function normalizeEventPayloadByType(type: CaptureEvent['type'], payload: unknown): CaptureEvent['payload'] {
+  if (type === 'console') {
+    return normalizeConsolePayload(payload);
+  }
+  if (type === 'network') {
+    return normalizeNetworkPayload(payload);
+  }
+  if (type === 'error') {
+    return normalizeErrorPayload(payload);
+  }
+  return normalizeStatePayload(payload);
+}
+
 function normalizeEvents(value: unknown): CaptureEvent[] {
   if (!Array.isArray(value)) {
     return [];
@@ -96,7 +303,7 @@ function normalizeEvents(value: unknown): CaptureEvent[] {
       id,
       type: rawType as CaptureEvent['type'],
       timestamp,
-      payload: rawPayload as CaptureEvent['payload'],
+      payload: normalizeEventPayloadByType(rawType as CaptureEvent['type'], rawPayload),
     });
   }
 

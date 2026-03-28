@@ -30,6 +30,12 @@ const manifest = defineManifest({
       js: ['src/content/index.ts'],
       run_at: 'document_start',
     },
+    {
+      matches: ['<all_urls>'],
+      js: ['src/content/page-world-capture.ts'],
+      run_at: 'document_start',
+      world: 'MAIN',
+    },
   ],
   options_ui: {
     page: 'src/options/index.html',
