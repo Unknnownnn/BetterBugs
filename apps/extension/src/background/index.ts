@@ -9,6 +9,7 @@ import {
 import { RollingCaptureBuffer } from '../shared/capture/rolling-buffer';
 import {
   createCaptureMediaMetadata,
+  normalizeEnvironmentInfo,
   createUploadFailureMessage,
   createUploadTransportFailureMessage,
 } from './capture-utils';
@@ -29,6 +30,7 @@ const QUEUE_KEY = 'bugcatcherQueuedSessions';
 const QUEUE_SYNC_ALARM = 'bugcatcherQueueSync';
 const BUFFER_WINDOW_MS = 120_000;
 const MAX_BUFFER_EVENTS = 2_400;
+const UPLOAD_TIMEOUT_MS = 10_000;
 const tabState = new Map<number, TabCaptureState>();
 let badgeResetTimer: ReturnType<typeof setTimeout> | undefined;
 
@@ -70,14 +72,16 @@ function sendStatusUpdate(status: 'uploading' | 'success' | 'error', message: st
     }, 7000);
   }
 
-  void chrome.runtime.sendMessage({
-    type: 'BC_STATUS_UPDATE',
-    payload: {
-      status,
-      message,
-      at: new Date().toISOString(),
-    },
-  });
+  void chrome.runtime
+    .sendMessage({
+      type: 'BC_STATUS_UPDATE',
+      payload: {
+        status,
+        message,
+        at: new Date().toISOString(),
+      },
+    })
+    .catch(() => undefined);
 }
 
 function normalizeConfig(raw: Partial<ExtensionConfig> | undefined): ExtensionConfig {
@@ -124,23 +128,39 @@ type UploadResult = {
 };
 
 async function uploadSessionPayload(payload: SessionPayload, config: ExtensionConfig): Promise<UploadResult> {
+  const normalizedBaseUrl = config.apiBaseUrl.replace(/\/+$/, '').replace(/\/sessions$/, '');
+  const abortController = new AbortController();
+  const timeoutId = setTimeout(() => abortController.abort(), UPLOAD_TIMEOUT_MS);
   let response: Response;
+
   try {
-    response = await fetch(`${config.apiBaseUrl}/sessions`, {
+    response = await fetch(`${normalizedBaseUrl}/sessions`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'X-Project-Key': config.projectKey,
       },
       body: JSON.stringify(payload),
+      signal: abortController.signal,
     });
-  } catch {
+  } catch (error: unknown) {
+    clearTimeout(timeoutId);
+    if (error instanceof Error && error.name === 'AbortError') {
+      return {
+        ok: false,
+        message: 'Upload timed out. Check API URL/server and retry capture.',
+        recoverable: true,
+      };
+    }
+
     return {
       ok: false,
       message: createUploadTransportFailureMessage(),
       recoverable: true,
     };
   }
+
+  clearTimeout(timeoutId);
 
   if (!response.ok) {
     return {
@@ -247,15 +267,7 @@ async function captureNow(): Promise<{ ok: boolean; message: string; sessionId?:
     url,
     title,
     timestamp,
-    environment:
-      state.environment ?? {
-        browser: 'Unknown',
-        browserVersion: 'Unknown',
-        os: 'Unknown',
-        osVersion: 'Unknown',
-        language: 'en-US',
-        viewport: { width: 0, height: 0 },
-      },
+    environment: normalizeEnvironmentInfo(state.environment),
     events: snapshot.events,
     media: {
       hasReplay: false,
