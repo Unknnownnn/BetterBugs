@@ -91,7 +91,10 @@ export class BugCatcherApiClient {
    */
   async testConnection(): Promise<boolean> {
     try {
-      const response = await fetch(`${this.baseUrl.replace('/api/v1', '')}/health`);
+      const response = await fetch(`${this.baseUrl}?limit=1&offset=0`, {
+        method: 'GET',
+        headers: this.getHeaders(),
+      });
       return response.ok;
     } catch {
       return false;

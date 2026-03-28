@@ -13,13 +13,20 @@ export interface CachedSession extends ApiSession {
 const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 const SESSION_CACHE_KEY = 'bugcatcherSessionCache';
 
+function ensureSessionsApiBaseUrl(apiBaseUrl: string): string {
+  const normalizedBaseUrl = apiBaseUrl.replace(/\/+$/, '');
+  return normalizedBaseUrl.endsWith('/sessions')
+    ? normalizedBaseUrl
+    : `${normalizedBaseUrl}/sessions`;
+}
+
 export class SessionManager {
   private client: BugCatcherApiClient;
   private cache: Map<string, CachedSession> = new Map();
   private lastListFetch: Map<string, number> = new Map();
 
   constructor(apiBaseUrl: string, projectKey: string) {
-    this.client = new BugCatcherApiClient(apiBaseUrl, projectKey);
+    this.client = new BugCatcherApiClient(ensureSessionsApiBaseUrl(apiBaseUrl), projectKey);
   }
 
   /**
