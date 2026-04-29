@@ -3,15 +3,15 @@
 import { Badge } from "@/components/ui/badge";
 import { useState } from "react";
 
+interface BSONElement {
+  Key?: string;
+  Value?: unknown;
+}
+
 interface ConsoleEvent {
   type: string;
   timestamp?: number;
-  payload?: {
-    level?: string;
-    message?: string;
-    stack?: string;
-    [key: string]: unknown;
-  };
+  payload?: unknown;
 }
 
 interface ConsolePanelProps {
@@ -31,16 +31,51 @@ function formatTimestamp(ms?: number): string {
   return `${Math.round(ms)}ms`;
 }
 
+// Handle both proper JSON objects and BSON key-value array format
+function getPayloadValue(payload: unknown, key: string): unknown {
+  if (!payload) return undefined;
+
+  if (typeof payload === "object" && !Array.isArray(payload)) {
+    return (payload as Record<string, unknown>)[key];
+  }
+
+  if (Array.isArray(payload)) {
+    const found = (payload as BSONElement[]).find((el) => el.Key === key);
+    return found?.Value;
+  }
+
+  return undefined;
+}
+
+function formatArgs(args: unknown[]): string {
+  if (!args || args.length === 0) return "";
+
+  return args
+    .map((arg) => {
+      if (arg === null) return "null";
+      if (arg === undefined) return "undefined";
+      if (typeof arg === "string") return arg;
+      if (typeof arg === "number" || typeof arg === "boolean") return String(arg);
+
+      try {
+        return JSON.stringify(arg, null, 0);
+      } catch {
+        return String(arg);
+      }
+    })
+    .join(" ");
+}
+
 export function ConsolePanel({ events }: ConsolePanelProps) {
   const [filter, setFilter] = useState<string | null>(null);
 
   const consoleEvents = events.filter((e) => e.type === "console");
   const levels = Array.from(
-    new Set(consoleEvents.map((e) => e.payload?.level || "log"))
+    new Set(consoleEvents.map((e) => String(getPayloadValue(e.payload, "level") || "log")))
   );
 
   const filtered = filter
-    ? consoleEvents.filter((e) => (e.payload?.level || "log") === filter)
+    ? consoleEvents.filter((e) => String(getPayloadValue(e.payload, "level") || "log") === filter)
     : consoleEvents;
 
   if (consoleEvents.length === 0) {
@@ -65,7 +100,9 @@ export function ConsolePanel({ events }: ConsolePanelProps) {
           all ({consoleEvents.length})
         </button>
         {levels.map((level) => {
-          const count = consoleEvents.filter((e) => (e.payload?.level || "log") === level).length;
+          const count = consoleEvents.filter(
+            (e) => String(getPayloadValue(e.payload, "level") || "log") === level
+          ).length;
           return (
             <button
               key={level}
@@ -91,8 +128,16 @@ export function ConsolePanel({ events }: ConsolePanelProps) {
           ) : (
             <div className="divide-y divide-border">
               {filtered.map((event, i) => {
-                const level = event.payload?.level || "log";
+                const level = String(getPayloadValue(event.payload, "level") || "log");
                 const color = LEVEL_COLORS[level] || LEVEL_COLORS.log;
+                const message = getPayloadValue(event.payload, "message");
+                const args = getPayloadValue(event.payload, "args");
+                const stack = getPayloadValue(event.payload, "stack");
+                const sequence = getPayloadValue(event.payload, "sequence");
+
+                const argsStr = Array.isArray(args) ? formatArgs(args) : "";
+                const displayContent = argsStr && !message ? argsStr : (message ? `${String(message)}${argsStr ? ` ${argsStr}` : ""}` : "");
+
                 return (
                   <div key={i} className={`p-3 ${color} border-l-2`}>
                     <div className="flex items-start gap-3">
@@ -104,13 +149,24 @@ export function ConsolePanel({ events }: ConsolePanelProps) {
                           <Badge variant="outline" className="text-[10px] capitalize h-5">
                             {level}
                           </Badge>
+                          {sequence != null && (
+                            <span className="text-[10px] text-muted-foreground">
+                              #{String(sequence)}
+                            </span>
+                          )}
                         </div>
-                        <div className="text-sm font-mono break-all">
-                          {String(event.payload?.message || "")}
-                        </div>
-                        {event.payload?.stack && (
+                        {displayContent ? (
+                          <div className="text-sm font-mono break-all whitespace-pre-wrap">
+                            {displayContent}
+                          </div>
+                        ) : (
+                          <div className="text-sm text-muted-foreground italic">
+                            (empty)
+                          </div>
+                        )}
+                        {!!stack && (
                           <pre className="mt-2 text-xs font-mono text-muted-foreground whitespace-pre-wrap overflow-auto max-h-40">
-                            {String(event.payload.stack)}
+                            {String(stack)}
                           </pre>
                         )}
                       </div>

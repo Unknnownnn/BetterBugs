@@ -4,7 +4,9 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { AiPanel } from "@/components/session-detail/AiPanel";
 import { ConsolePanel } from "@/components/session-detail/ConsolePanel";
+import { ErrorPanel } from "@/components/session-detail/ErrorPanel";
 import { NetworkPanel } from "@/components/session-detail/NetworkPanel";
+import { StatePanel } from "@/components/session-detail/StatePanel";
 import { getSession, type ApiSession } from "@/lib/api";
 import { AlertTriangle, ArrowLeft, Bug, Copy, Globe, Monitor, Tag, Trash2 } from "lucide-react";
 import Link from "next/link";
@@ -24,7 +26,7 @@ export default function SessionDetailPage() {
   const [session, setSession] = useState<ApiSession | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<"console" | "network" | "state" | "ai">("console");
+  const [activeTab, setActiveTab] = useState<"console" | "error" | "network" | "state" | "ai">("console");
 
   useEffect(() => {
     if (!sessionId) return;
@@ -202,7 +204,7 @@ export default function SessionDetailPage() {
           )}
 
           <div className="flex items-center gap-1 border-b border-border">
-            {(["console", "network", "state", "ai"] as const).map((tab) => (
+            {(["console", "error", "network", "state", "ai"] as const).map((tab) => (
               <button
                 key={tab}
                 onClick={() => setActiveTab(tab)}
@@ -220,10 +222,9 @@ export default function SessionDetailPage() {
 
           <div className="min-h-[300px]">
             {activeTab === "console" && <ConsolePanel events={session.events || []} />}
+            {activeTab === "error" && <ErrorPanel events={session.events || []} />}
             {activeTab === "network" && <NetworkPanel events={session.events || []} />}
-            {activeTab === "state" && (
-              <div className="text-center py-12 text-muted-foreground text-sm">State snapshots will be displayed here.</div>
-            )}
+            {activeTab === "state" && <StatePanel events={session.events || []} />}
             {activeTab === "ai" && <AiPanel analysis={session.aiAnalysis || null} />}
           </div>
         </div>

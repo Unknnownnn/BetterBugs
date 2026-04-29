@@ -3,21 +3,15 @@
 import { Badge } from "@/components/ui/badge";
 import { useState } from "react";
 
+interface BSONElement {
+  Key?: string;
+  Value?: unknown;
+}
+
 interface NetworkEvent {
   type: string;
   timestamp?: number;
-  payload?: {
-    method?: string;
-    url?: string;
-    status?: number;
-    statusText?: string;
-    duration?: number;
-    requestHeaders?: Record<string, string>;
-    responseHeaders?: Record<string, string>;
-    requestBody?: unknown;
-    responseBody?: unknown;
-    [key: string]: unknown;
-  };
+  payload?: unknown;
 }
 
 interface NetworkPanelProps {
@@ -27,6 +21,22 @@ interface NetworkPanelProps {
 function formatTimestamp(ms?: number): string {
   if (ms == null || Number.isNaN(ms)) return "0ms";
   return `${Math.round(ms)}ms`;
+}
+
+// Handle both proper JSON objects and BSON key-value array format
+function getPayloadValue(payload: unknown, key: string): unknown {
+  if (!payload) return undefined;
+
+  if (typeof payload === "object" && !Array.isArray(payload)) {
+    return (payload as Record<string, unknown>)[key];
+  }
+
+  if (Array.isArray(payload)) {
+    const found = (payload as BSONElement[]).find((el) => el.Key === key);
+    return found?.Value;
+  }
+
+  return undefined;
 }
 
 function getStatusColor(status?: number): string {
@@ -45,6 +55,16 @@ function getStatusBadge(status?: number): "success" | "warning" | "destructive" 
   return "outline";
 }
 
+function formatBody(body: unknown): string {
+  if (!body) return "—";
+  if (typeof body === "string") return body;
+  try {
+    return JSON.stringify(body, null, 2);
+  } catch {
+    return String(body);
+  }
+}
+
 export function NetworkPanel({ events }: NetworkPanelProps) {
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
 
@@ -60,12 +80,21 @@ export function NetworkPanel({ events }: NetworkPanelProps) {
 
   return (
     <div className="space-y-3">
+      <div className="text-sm text-muted-foreground">
+        {networkEvents.length} request{networkEvents.length !== 1 ? "s" : ""} captured
+      </div>
+
       <div className="rounded-lg border border-border bg-card overflow-hidden">
         <div className="max-h-[500px] overflow-auto">
           <div className="divide-y divide-border">
             {networkEvents.map((event, i) => {
-              const p = event.payload || {};
+              const method = String(getPayloadValue(event.payload, "method") || "GET");
+              const url = String(getPayloadValue(event.payload, "url") || "unknown");
+              const status = getPayloadValue(event.payload, "status") as number | undefined;
+              const duration = getPayloadValue(event.payload, "duration") as number | undefined;
+
               const isSelected = selectedIndex === i;
+
               return (
                 <div
                   key={i}
@@ -78,21 +107,21 @@ export function NetworkPanel({ events }: NetworkPanelProps) {
                     onClick={() => setSelectedIndex(isSelected ? null : i)}
                   >
                     <Badge
-                      variant={getStatusBadge(p.status)}
+                      variant={getStatusBadge(status)}
                       className="text-[10px] shrink-0 w-12 justify-center"
                     >
-                      {p.method || "GET"}
+                      {method}
                     </Badge>
                     <span
-                      className={`text-sm font-medium shrink-0 w-10 text-right ${getStatusColor(p.status)}`}
+                      className={`text-sm font-medium shrink-0 w-10 text-right ${getStatusColor(status)}`}
                     >
-                      {p.status || "—"}
+                      {status || "—"}
                     </span>
                     <span className="text-sm text-foreground truncate flex-1 min-w-0 font-mono">
-                      {p.url || "unknown"}
+                      {url}
                     </span>
                     <span className="text-xs text-muted-foreground shrink-0 w-16 text-right">
-                      {p.duration != null ? `${p.duration}ms` : "—"}
+                      {duration != null ? `${duration}ms` : "—"}
                     </span>
                     <span className="text-xs text-muted-foreground shrink-0 w-14 text-right">
                       {formatTimestamp(event.timestamp)}
@@ -101,23 +130,66 @@ export function NetworkPanel({ events }: NetworkPanelProps) {
 
                   {isSelected && (
                     <div className="px-4 pb-4 space-y-3 border-t border-border/50 bg-background/50">
-                      <div className="grid grid-cols-2 gap-4 pt-3">
-                        <div>
-                          <h4 className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-2">
-                            Request
-                          </h4>
-                          <pre className="text-xs font-mono bg-secondary/50 rounded p-2 overflow-auto max-h-40 whitespace-pre-wrap">
-                            {JSON.stringify(p.requestBody ?? p.requestHeaders ?? {}, null, 2)}
-                          </pre>
-                        </div>
-                        <div>
-                          <h4 className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-2">
-                            Response
-                          </h4>
-                          <pre className="text-xs font-mono bg-secondary/50 rounded p-2 overflow-auto max-h-40 whitespace-pre-wrap">
-                            {JSON.stringify(p.responseBody ?? p.responseHeaders ?? {}, null, 2)}
-                          </pre>
-                        </div>
+                      {/* Request Headers */}
+                      <div>
+                        <h4 className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-2">
+                          Request Headers
+                        </h4>
+                        {(() => {
+                          const reqHeaders = getPayloadValue(event.payload, "requestHeaders");
+                          const reqBody = getPayloadValue(event.payload, "requestBody");
+                          if (reqHeaders || reqBody) {
+                            return (
+                              <>
+                                {reqHeaders && (
+                                  <pre className="text-xs font-mono bg-secondary/50 rounded p-2 overflow-auto max-h-32 whitespace-pre-wrap">
+                                    {JSON.stringify(reqHeaders, null, 2)}
+                                  </pre>
+                                )}
+                                {reqBody && (
+                                  <pre className="text-xs font-mono bg-secondary/50 rounded p-2 overflow-auto max-h-32 whitespace-pre-wrap mt-2">
+                                    {formatBody(reqBody)}
+                                  </pre>
+                                )}
+                              </>
+                            );
+                          }
+                          return <span className="text-xs text-muted-foreground">No request data</span>;
+                        })()}
+                      </div>
+
+                      {/* Response Headers */}
+                      <div>
+                        <h4 className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-2">
+                          Response
+                        </h4>
+                        {(() => {
+                          const resHeaders = getPayloadValue(event.payload, "responseHeaders");
+                          const resBody = getPayloadValue(event.payload, "responseBody");
+                          const size = getPayloadValue(event.payload, "size");
+                          if (resHeaders || resBody || size != null) {
+                            return (
+                              <>
+                                {resHeaders && (
+                                  <pre className="text-xs font-mono bg-secondary/50 rounded p-2 overflow-auto max-h-32 whitespace-pre-wrap">
+                                    {JSON.stringify(resHeaders, null, 2)}
+                                  </pre>
+                                )}
+                                {resBody && (
+                                  <pre className="text-xs font-mono bg-secondary/50 rounded p-2 overflow-auto max-h-32 whitespace-pre-wrap mt-2">
+                                    {formatBody(resBody)}
+                                  </pre>
+                                )}
+                                {size != null && (
+                                  <div className="text-xs text-muted-foreground mt-1">
+                                    Size: {String(size)} bytes
+                                  </div>
+                                )}
+                              </>
+                            );
+                          }
+                          return <span className="text-xs text-muted-foreground">No response data</span>;
+                        })()}
                       </div>
                     </div>
                   )}

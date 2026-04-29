@@ -11,7 +11,11 @@
       "Bash(curl -s -H \"X-Project-Key: test-api-key\" \"http://localhost:3001/api/v1/sessions?errorType=TypeError\")",
       "Bash(curl -s -X POST -H 'X-Project-Key: test-api-key' http://localhost:3001/api/v1/sessions/c39dc0a0-96ea-4ae6-aaf7-e3850b64f233/analyze)",
       "Bash(curl -s -H 'X-Project-Key: test-api-key' http://localhost:3001/api/v1/sessions/c39dc0a0-96ea-4ae6-aaf7-e3850b64f233/analysis)",
-      "Bash(curl -s -H \"X-Project-Key: test-api-key\" \"http://localhost:3001/api/v1/projects/test-project/sessions?limit=1\")"
+      "Bash(curl -s -H \"X-Project-Key: test-api-key\" \"http://localhost:3001/api/v1/projects/test-project/sessions?limit=1\")",
+      "Bash(head -n 235 apps/dashboard/app/sessions/\\\\\\\\[id\\\\\\\\]/page.tsx)",
+      "Bash(xxd)",
+      "Bash(npx tsc *)",
+      "Bash(npm run *)"
     ]
   }
 }
