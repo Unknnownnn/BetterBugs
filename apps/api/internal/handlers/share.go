@@ -19,25 +19,25 @@ type ShareHandler struct {
 }
 
 type shareReportView struct {
-	SessionID        string
-	Title            string
-	URL              string
-	CreatedAt        string
-	Timestamp        string
-	DurationSeconds  string
-	Environment      string
-	Browser          string
-	OS               string
-	ErrorType        string
-	ErrorMessage     string
-	HasError         bool
-	Stats            models.Stats
-	TriageSummary    models.TriageSummary
-	Tags             []string
-	CommentCount     int
-	TopEndpoints     []models.NetworkEndpointTriage
-	StatusHistogram  []string
-	GeneratedAt      string
+	SessionID       string
+	Title           string
+	URL             string
+	CreatedAt       string
+	Timestamp       string
+	DurationSeconds string
+	Environment     string
+	Browser         string
+	OS              string
+	ErrorType       string
+	ErrorMessage    string
+	HasError        bool
+	Stats           models.Stats
+	TriageSummary   models.TriageSummary
+	Tags            []string
+	CommentCount    int
+	TopEndpoints    []models.NetworkEndpointTriage
+	StatusHistogram []string
+	GeneratedAt     string
 }
 
 func NewShareHandler(db *database.Database) *ShareHandler {
