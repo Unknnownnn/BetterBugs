@@ -85,6 +85,7 @@ type FinalizeSessionRequest struct {
 
 type FinalizeSessionResponse struct {
 	SessionID string   `json:"sessionId"`
+	ShareURL  string   `json:"shareUrl,omitempty"`
 	Warnings  []string `json:"warnings,omitempty"`
 	Storage   storagePolicyStatus `json:"storage"`
 }
@@ -391,9 +392,30 @@ func (h *UploadSessionHandler) FinalizeUploadSession(c *gin.Context) {
 
 	c.JSON(http.StatusOK, FinalizeSessionResponse{
 		SessionID: result.sessionID,
+		ShareURL:  buildShareURL(c, result.sessionID),
 		Warnings:  warnings,
 		Storage:   result.storageStatus,
 	})
+}
+
+func buildShareURL(c *gin.Context, sessionID string) string {
+	if sessionID == "" {
+		return ""
+	}
+
+	scheme := "http"
+	if forwarded := strings.TrimSpace(c.GetHeader("X-Forwarded-Proto")); forwarded != "" {
+		scheme = forwarded
+	} else if c.Request != nil && c.Request.TLS != nil {
+		scheme = "https"
+	}
+
+	host := c.Request.Host
+	if host == "" {
+		return ""
+	}
+
+	return fmt.Sprintf("%s://%s/share/%s", scheme, host, sessionID)
 }
 
 func getProjectIDFromContext(c *gin.Context) string {
