@@ -1240,10 +1240,11 @@ function attachReplayVideoListeners(): void {
 
 function openSessionDetailsTab(sessionId: string): void {
   try {
-    const pageUrl = chrome.runtime.getURL(`src/session-details/index.html?sessionId=${encodeURIComponent(sessionId)}`);
-    void chrome.tabs.create({ url: pageUrl });
+    const dashboardBase = (currentConfig?.dashboardBaseUrl || 'http://localhost:3002').replace(/\/$/, '');
+    const url = `${dashboardBase}/sessions/${encodeURIComponent(sessionId)}`;
+    void chrome.tabs.create({ url });
   } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : 'Unable to open session details tab.';
+    const message = error instanceof Error ? error.message : 'Unable to open session in dashboard.';
     setStatus(message);
   }
 }

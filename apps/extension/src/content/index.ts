@@ -2,6 +2,7 @@ import {
   type BackgroundMessage,
   type CaptureEvent,
   type ConsoleLevel,
+  type EnvironmentInfo,
   type ExtensionConfig,
   type NetworkEventPayload,
   type StateEventPayload,

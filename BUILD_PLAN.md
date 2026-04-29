@@ -8,7 +8,31 @@
 
 ## 📊 Progress Tracker
 
-**Last updated:** 2026-04-29
+**Last updated:** 2026-04-29 (afternoon)
+
+### 🔥 Just Fixed (Critical Integration)
+
+- **CORS:** API allowed only ports 3000/3001 → added 3002 for dashboard (`apps/api/main.go:77`)
+- **List response shape:** API returns `items[]`, dashboard was reading `sessions[]` → fixed (`apps/dashboard/lib/api.ts:110`)
+- **Detail response unwrap:** API returns `{ session, events, signedMedia }` → dashboard now properly merges them (`apps/dashboard/lib/api.ts:128-137`)
+- **Video/screenshot rendering:** Detail page now displays `signedMedia.video` (HTML5 controls) or `signedMedia.screenshot` (`apps/dashboard/app/sessions/[id]/page.tsx:162-180`)
+- **Killed extension session-details page** — replaced with dashboard deep links via `chrome.tabs.create({ url: dashboardBaseUrl + '/sessions/' + id })`. Removed `src/session-details/`, manifest `web_accessible_resources`, vite entry. Added `dashboardBaseUrl` to `ExtensionConfig`.
+- **Restored 7+ missing message types** that friend's commit removed but code still uses (`BC_CAPTURE_START_REQUEST`, `BC_CAPTURE_STOP_REQUEST`, `BC_CAPTURE_VIDEO_*`, etc.)
+- **Removed dead `apps/extension/src/background/session-handlers.ts`** — it had orphan code at module scope, no imports, never integrated.
+
+### ✅ Fixed (Pre-existing damage from friend's commits)
+
+All cleared up — extension now compiles & builds cleanly:
+- ✅ `capture-utils.ts:347-348` — typed `rawPayload`/`rawMedia` as `Record<string, unknown>`
+- ✅ `background/index.ts:570` — added `captureStatus: { state: 'idle' }` to reinit
+- ✅ `background/index.ts:865-893` — wrapped `chrome.tabCapture.capture` callback API in a Promise; track stop now uses captured stream var
+- ✅ `content/index.ts` — added `EnvironmentInfo` to imports
+
+**Verified:**
+- `npx tsc --noEmit` (extension) → 0 errors
+- `npm run build` (extension) → builds in 359ms
+- `npm run build` (dashboard) → 4 routes compiled
+- `go build ./...` (api) → clean
 
 ### Owner B (Frontend) — Week 1 ✅ Mostly Done
 

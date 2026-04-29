@@ -198,6 +198,7 @@ export type ExportDestination = 'github' | 'gitlab' | 'linear' | 'share-link';
 
 export interface ExtensionConfig {
   apiBaseUrl: string;
+  dashboardBaseUrl: string;
   projectId: string;
   projectKey: string;
   captureNetwork: boolean;
@@ -218,6 +219,7 @@ export interface ExtensionConfig {
 
 export const DEFAULT_CONFIG: ExtensionConfig = {
   apiBaseUrl: 'http://localhost:3001/api/v1',
+  dashboardBaseUrl: 'http://localhost:3002',
   projectId: 'dev-project',
   projectKey: 'dev-key',
   captureNetwork: true,
@@ -298,6 +300,22 @@ export interface BackgroundMessage<T = unknown> {
     | 'BC_CONFIG_SAVE'
     | 'BC_CAPTURE_PREVIEW_REQUEST'
     | 'BC_CAPTURE_PREVIEW_RESPONSE'
+    | 'BC_CAPTURE_SCREENSHOT_PREVIEW_REQUEST'
+    | 'BC_CAPTURE_SCREENSHOT_PREVIEW_RESPONSE'
+    | 'BC_CAPTURE_SCREENSHOT_REQUEST'
+    | 'BC_CAPTURE_SCREENSHOT_RESPONSE'
+    | 'BC_CAPTURE_STATE_REQUEST'
+    | 'BC_CAPTURE_STATE_RESPONSE'
+    | 'BC_CAPTURE_START_REQUEST'
+    | 'BC_CAPTURE_START_RESPONSE'
+    | 'BC_CAPTURE_STOP_REQUEST'
+    | 'BC_CAPTURE_STOP_RESPONSE'
+    | 'BC_CAPTURE_VIDEO_START_REQUEST'
+    | 'BC_CAPTURE_VIDEO_START_RESPONSE'
+    | 'BC_CAPTURE_VIDEO_STOP_REQUEST'
+    | 'BC_CAPTURE_VIDEO_STOP_RESPONSE'
+    | 'BC_CAPTURE_VIDEO_PREVIEW_REQUEST'
+    | 'BC_CAPTURE_VIDEO_PREVIEW_RESPONSE'
     | 'BC_GET_SESSIONS_REQUEST'
     | 'BC_GET_SESSIONS_RESPONSE'
     | 'BC_GET_SESSION_DETAIL_REQUEST'

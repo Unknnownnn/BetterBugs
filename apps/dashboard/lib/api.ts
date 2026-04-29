@@ -42,6 +42,11 @@ export interface ApiSession {
     domSnapshots?: string[];
     hasReplay?: boolean;
   };
+  signedMedia?: {
+    screenshot?: string;
+    video?: string;
+    domSnapshots?: string[];
+  };
   aiAnalysis?: {
     summary: string;
     rootCause: string;
@@ -107,7 +112,7 @@ export async function listSessions(params?: {
 
   const data = await res.json();
   return {
-    sessions: data.sessions || [],
+    sessions: data.items || data.sessions || [],
     total: data.total || 0,
     limit: data.limit || 20,
     offset: data.offset || 0,
@@ -125,7 +130,16 @@ export async function getSession(id: string): Promise<ApiSession | null> {
     throw new Error(`Failed to get session: ${res.status} ${res.statusText}`);
   }
 
-  return res.json();
+  const data = await res.json();
+  // API GetByID returns { session, events, signedMedia } — unwrap and merge events
+  if (data && typeof data === "object" && "session" in data) {
+    return {
+      ...data.session,
+      events: data.events || [],
+      signedMedia: data.signedMedia,
+    };
+  }
+  return data;
 }
 
 export async function deleteSession(id: string): Promise<void> {

@@ -360,6 +360,7 @@ form.addEventListener('submit', async (event) => {
 
   const nextConfig: ExtensionConfig = {
     apiBaseUrl: apiBaseUrlInput.value.trim(),
+    dashboardBaseUrl: lastLoadedConfig.dashboardBaseUrl || DEFAULT_CONFIG.dashboardBaseUrl,
     projectId: projectIdInput.value.trim(),
     projectKey: projectKeyInput.value.trim(),
     captureNetwork: captureNetworkInput.checked,

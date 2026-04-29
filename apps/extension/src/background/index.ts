@@ -570,6 +570,7 @@ async function captureNow(): Promise<{ ok: boolean; message: string; sessionId?:
   tabState.set(tabId, {
     buffer: new RollingCaptureBuffer(BUFFER_WINDOW_MS, MAX_BUFFER_EVENTS),
     environment: state.environment,
+    captureStatus: { state: 'idle' },
   });
 
   await syncQueuedSessions();
@@ -861,21 +862,27 @@ async function startVideoRecording(): Promise<{ ok: boolean; message: string }> 
     return { ok: false, message: 'Recording already in progress.' };
   }
 
-  const stream = await chrome.tabCapture.capture({
-    audio: false,
-    video: true,
-    videoConstraints: {
-      mandatory: {
-        maxFrameRate: 30,
+  const stream: MediaStream | null = await new Promise((resolve) => {
+    chrome.tabCapture.capture(
+      {
+        audio: false,
+        video: true,
+        videoConstraints: {
+          mandatory: {
+            maxFrameRate: 30,
+          },
+        },
       },
-    },
+      (s) => resolve(s ?? null),
+    );
   });
 
   if (!stream) {
     return { ok: false, message: 'Unable to start tab capture.' };
   }
 
-  const recorder = new MediaRecorder(stream, { mimeType: 'video/webm;codecs=vp9' });
+  const captureStream: MediaStream = stream;
+  const recorder = new MediaRecorder(captureStream, { mimeType: 'video/webm;codecs=vp9' });
   const chunks: Blob[] = [];
   recorder.ondataavailable = (event) => {
     if (event.data.size > 0) {
@@ -883,7 +890,7 @@ async function startVideoRecording(): Promise<{ ok: boolean; message: string }> 
     }
   };
   recorder.onstop = () => {
-    stream.getTracks().forEach((track) => track.stop());
+    captureStream.getTracks().forEach((track) => track.stop());
   };
 
   state.videoRecorder = recorder;

@@ -13,7 +13,6 @@ export default defineConfig({
       input: {
         popup: resolve(__dirname, 'src/popup/index.html'),
         options: resolve(__dirname, 'src/options/index.html'),
-        'session-details': resolve(__dirname, 'src/session-details/index.html'),
       },
     },
   },

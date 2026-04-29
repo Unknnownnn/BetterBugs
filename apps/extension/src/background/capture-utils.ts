@@ -344,8 +344,8 @@ export function normalizeSessionPayloadForUpload(
   payload: SessionPayload,
   config: ExtensionConfig,
 ): SessionPayload {
-  const rawPayload = isRecord(payload) ? payload : {};
-  const rawMedia = isRecord(rawPayload.media) ? rawPayload.media : {};
+  const rawPayload: Record<string, unknown> = isRecord(payload) ? payload : {};
+  const rawMedia: Record<string, unknown> = isRecord(rawPayload.media) ? rawPayload.media : {};
   const rawProjectId = rawPayload.projectId;
 
   const projectId =

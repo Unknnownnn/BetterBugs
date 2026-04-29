@@ -159,6 +159,26 @@ export default function SessionDetailPage() {
             </div>
           )}
 
+          {(session.signedMedia?.video || session.signedMedia?.screenshot) && (
+            <div className="rounded-xl border border-border bg-card overflow-hidden">
+              {session.signedMedia.video ? (
+                <video
+                  src={session.signedMedia.video}
+                  controls
+                  preload="metadata"
+                  className="w-full max-h-[500px] bg-black"
+                />
+              ) : session.signedMedia.screenshot ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={session.signedMedia.screenshot}
+                  alt="Session screenshot"
+                  className="w-full max-h-[500px] object-contain bg-black"
+                />
+              ) : null}
+            </div>
+          )}
+
           {session.aiAnalysis && (
             <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/5 p-4">
               <div className="flex items-center gap-2 mb-2">

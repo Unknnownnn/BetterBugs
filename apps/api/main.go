@@ -74,7 +74,7 @@ func main() {
 				return true
 			}
 
-			if origin == "http://localhost:3000" || origin == "http://localhost:3001" {
+			if origin == "http://localhost:3000" || origin == "http://localhost:3001" || origin == "http://localhost:3002" {
 				return true
 			}
 
