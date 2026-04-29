@@ -26,16 +26,32 @@
 
 - Go 1.22+
 - Node.js 18+
-- Docker (for MongoDB and MinIO)
+- MongoDB (local or hosted — e.g., MongoDB Atlas)
 - Chrome browser (for extension)
 
-### 1. Start Infrastructure
+### 1. Configure Environment
 
 ```bash
-# Start MongoDB
+cd apps/api
+cp .env.example .env
+```
+
+Edit `.env` with your hosted MongoDB URI and credentials. For example:
+
+```bash
+# MongoDB (hosted)
+MONGODB_URI=mongodb+srv://user:pass@cluster.mongodb.net/bugcatcher
+```
+
+MinIO is optional. If you skip it, media uploads will use local filesystem storage (`MEDIA_STORAGE_DIR`).
+
+If you prefer local infrastructure instead:
+
+```bash
+# Start MongoDB locally
 docker run -d -p 27017:27017 --name bugcatcher-mongo mongo:7
 
-# Start MinIO
+# Start MinIO locally (optional)
 docker run -d -p 9000:9000 -p 9001:9001 --name bugcatcher-minio \
   -e "MINIO_ROOT_USER=minioadmin" \
   -e "MINIO_ROOT_PASSWORD=minioadmin" \
@@ -220,18 +236,22 @@ apps/
 PORT=3001
 GIN_MODE=debug
 
-# MongoDB
-MONGODB_URI=mongodb://localhost:27017
+# MongoDB (hosted example — MongoDB Atlas, etc.)
+MONGODB_URI=mongodb+srv://user:password@cluster.mongodb.net/bugcatcher
+# For local MongoDB: MONGODB_URI=mongodb://localhost:27017
 MONGODB_DATABASE=bugcatcher
 SEED_PROJECT_ID=dev-project
 SEED_PROJECT_API_KEY=dev-key
 
-# MinIO
+# MinIO (optional — media falls back to local filesystem if unavailable)
 MINIO_ENDPOINT=localhost:9000
 MINIO_ACCESS_KEY=minioadmin
 MINIO_SECRET_KEY=minioadmin
 MINIO_BUCKET=bugcatcher-sessions
 MINIO_USE_SSL=false
+
+# Local media storage (used when MinIO is not configured)
+MEDIA_STORAGE_DIR=storage/media
 
 # Security
 API_KEY_SECRET=your-secret-key-here
@@ -295,13 +315,9 @@ npm run test
 
 **API won't start:**
 ```bash
-# Check MongoDB is running
-docker ps | grep mongo
-docker restart bugcatcher-mongo
-
-# Check MinIO is running
-docker ps | grep minio
-docker restart bugcatcher-minio
+# Check your MongoDB connection string is correct
+cd apps/api
+cat .env | grep MONGODB_URI
 
 # Reset Go dependencies
 cd apps/api
