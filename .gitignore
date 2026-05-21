@@ -44,3 +44,21 @@ temp/
 .mcp.json
 settings.local.json
 *.claude/
+
+# Local session data — generated at runtime by the extension + API
+# Screenshots, videos, DOM snapshots stored locally (when MinIO is offline)
+apps/api/storage/
+storage/media/
+*.png
+*.jpg
+*.jpeg
+*.webp
+*.mp4
+*.webm
+
+# MCP server test scripts (local dev only)
+apps/mcp-server/test_tools.py
+
+# Python cache
+*.pyc
+*.pyo

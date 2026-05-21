@@ -61,6 +61,21 @@ Thumbs.db
 minio-data/
 .minio/
 
+# Local media storage — screenshots, videos, DOM snapshots captured by extension
+# Generated at runtime; never commit session artifacts
+storage/
+storage/media/
+storage/media/screenshots/
+storage/media/videos/
+storage/media/dom-snapshots/
+*.png
+*.jpg
+*.jpeg
+*.webp
+*.mp4
+*.webm
+*.gif
+
 # Database dumps
 *.sql
 *.dump
