@@ -63,11 +63,7 @@ minio-data/
 
 # Local media storage — screenshots, videos, DOM snapshots captured by extension
 # Generated at runtime; never commit session artifacts
-storage/
-storage/media/
-storage/media/screenshots/
-storage/media/videos/
-storage/media/dom-snapshots/
+/storage/
 *.png
 *.jpg
 *.jpeg

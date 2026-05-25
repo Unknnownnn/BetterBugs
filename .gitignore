@@ -8,6 +8,12 @@ node_modules/
 vendor/
 __pycache__/
 
+# Python Virtual Environments
+.venv/
+venv/
+env/
+ENV/
+
 # Build outputs
 dist/
 build/
@@ -15,6 +21,9 @@ build/
 *.dll
 *.so
 *.dylib
+
+# Inno Setup output
+installer/output/
 
 # Logs
 *.log
@@ -44,6 +53,9 @@ temp/
 .mcp.json
 settings.local.json
 *.claude/
+
+# TypeScript build info
+*.tsbuildinfo
 
 # Local session data — generated at runtime by the extension + API
 # Screenshots, videos, DOM snapshots stored locally (when MinIO is offline)
