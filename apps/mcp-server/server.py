@@ -4,7 +4,6 @@ import json
 from pathlib import Path
 from typing import Optional, Any
 
-# Add parent to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from fastmcp import FastMCP
@@ -14,10 +13,13 @@ from pydantic import BaseModel
 
 from config import config
 
-# Load .env file if exists
-load_dotenv(Path(__file__).parent / ".env", override=False)
+if getattr(sys, 'frozen', False):
+    bundle_dir = Path(sys.executable).parent
+else:
+    bundle_dir = Path(__file__).parent
 
-# Initialize FastMCP server
+load_dotenv(bundle_dir / ".env", override=False)
+
 mcp = FastMCP("BetterBugs MCP Server")
 
 
@@ -43,7 +45,6 @@ class BetterBugsClient:
         response.raise_for_status()
         return response.json()
 
-    # Session endpoints
     def list_sessions(self, limit: int = 20, offset: int = 0, tags: str = None) -> dict:
         """List all sessions with pagination."""
         params = {"limit": limit, "offset": offset}
@@ -64,12 +65,27 @@ class BetterBugsClient:
         metadata: dict = None,
     ) -> dict:
         """Create a new session."""
+        from datetime import datetime, timezone
+        timestamp_str = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
+        
         data = {
+            "projectId": "dev-project",
             "url": url,
-            "title": title,
-            "browser": browser,
-            "platform": platform or "Windows",
-            "metadata": metadata or {},
+            "title": title or "Manual Session Log",
+            "timestamp": timestamp_str,
+            "environment": {
+                "browser": browser,
+                "browserVersion": "124.0.0.0",
+                "os": platform or "Windows",
+                "osVersion": "11",
+                "viewport": {
+                    "width": 1920,
+                    "height": 1080
+                },
+                "language": "en-US",
+                "timezone": "UTC"
+            },
+            "events": []
         }
         return self._request("POST", "/api/v1/sessions", json=data)
 
@@ -80,7 +96,7 @@ class BetterBugsClient:
     def update_session_tags(self, session_id: str, tags: list[str]) -> dict:
         """Update tags for a session."""
         return self._request(
-            "PATCH", f"/api/v1/sessions/{session_id}/tags", json={"tags": tags}
+            "PATCH", f"/api/v1/sessions/{session_id}/tags", json={"add": tags, "actor": "mcp-agent"}
         )
 
     def batch_update_tags(self, session_ids: list[str], tags: list[str]) -> dict:
@@ -99,7 +115,6 @@ class BetterBugsClient:
             json={"content": content, "author": author},
         )
 
-    # Analysis endpoints
     def analyze_session(self, session_id: str) -> dict:
         """Trigger AI analysis for a session."""
         return self._request("POST", f"/api/v1/sessions/{session_id}/analyze")
@@ -108,7 +123,6 @@ class BetterBugsClient:
         """Get cached analysis for a session."""
         return self._request("GET", f"/api/v1/sessions/{session_id}/analysis")
 
-    # Project endpoints
     def get_project_stats(self, project_id: str) -> dict:
         """Get project statistics."""
         return self._request("GET", f"/api/v1/projects/{project_id}/stats")
@@ -120,18 +134,27 @@ class BetterBugsClient:
         params = {"limit": limit, "offset": offset}
         return self._request("GET", f"/api/v1/projects/{project_id}/sessions", params=params)
 
-    # Export endpoints
-    def trigger_export(self, session_ids: list[str], format: str = "json") -> dict:
+    def trigger_export(self, session_id: str, format: str = "json") -> dict:
         """Trigger export of sessions."""
-        return self._request(
-            "POST", "/api/v1/plugin/v1/exports", json={"sessionIds": session_ids, "format": format}
-        )
+        headers = {
+            "X-Project-Key": self.api_key,
+            "Content-Type": "application/json",
+            "X-Plugin-Version": "1.0.0"
+        }
+        url = f"{self.base_url}/api/v1/plugin/v1/exports"
+        data = {
+            "sessionId": session_id,
+            "destination": format,
+            "options": {}
+        }
+        response = self.client.request("POST", url, json=data, headers=headers)
+        response.raise_for_status()
+        return response.json()
 
     def close(self):
         self.client.close()
 
 
-# Global client instance
 _client: Optional[BetterBugsClient] = None
 
 
@@ -142,9 +165,6 @@ def get_client() -> BetterBugsClient:
     return _client
 
 
-# ==================== MCP Tools ====================
-
-# Session Management Tools
 @mcp.tool()
 def list_sessions(
     limit: int = 20,
@@ -166,7 +186,6 @@ def list_sessions(
     """
     client = get_client()
 
-    # If session_id provided, use direct get
     if session_id:
         try:
             result = client.get_session(session_id)
@@ -235,7 +254,6 @@ def update_session_tags(session_id: str, tags: list[str]) -> str:
         return json.dumps({"error": f"Failed to update tags: {e}"})
 
 
-# Analysis Tools
 @mcp.tool()
 def analyze_session(session_id: str) -> str:
     """Trigger AI analysis for a session.
@@ -271,7 +289,6 @@ def get_session_analysis(session_id: str) -> str:
         return json.dumps({"error": f"Failed to get analysis: {e}"})
 
 
-# Project Tools
 @mcp.tool()
 def get_project_stats(project_id: str = "dev-project") -> str:
     """Get statistics for a project.
@@ -300,13 +317,14 @@ def export_sessions(
     """
     client = get_client()
     try:
-        result = client.trigger_export(session_ids, format)
+        if not session_ids:
+            return json.dumps({"error": "No session IDs provided"})
+        result = client.trigger_export(session_ids[0], format)
         return json.dumps(result, indent=2)
     except httpx.HTTPStatusError as e:
         return json.dumps({"error": f"Failed to trigger export: {e}"})
 
 
-# Advanced Analysis Tool (combines session data + external AI)
 @mcp.tool()
 def comprehensive_analysis(session_id: str) -> str:
     """Perform a comprehensive analysis of a session.
@@ -321,30 +339,35 @@ def comprehensive_analysis(session_id: str) -> str:
     client = get_client()
 
     try:
-        # Get session data
-        session = client.get_session(session_id)
+        session_res = client.get_session(session_id)
+        session_data = session_res.get("session", {})
+        events = session_res.get("events", []) or []
 
-        # Get or trigger analysis
-        analysis = client.get_analysis(session_id)
-        if not analysis.get("analysis"):
-            # Trigger new analysis if none exists
-            analyze_result = client.analyze_session(session_id)
-            analysis = {"status": "initiated", "sessionId": session_id}
+        try:
+            analysis = client.get_analysis(session_id)
+        except Exception:
+            try:
+                client.analyze_session(session_id)
+                analysis = client.get_analysis(session_id)
+            except Exception:
+                analysis = {}
 
-        # Build comprehensive response
+        console_logs = [e for e in events if e.get("type") == "console"]
+        network_requests = [e for e in events if e.get("type") == "network"]
+
         result = {
             "session": {
-                "id": session.get("sessionId"),
-                "url": session.get("url"),
-                "title": session.get("title"),
-                "browser": session.get("browser"),
-                "platform": session.get("platform"),
-                "createdAt": session.get("createdAt"),
-                "tags": session.get("tags", []),
+                "id": session_data.get("sessionId"),
+                "url": session_data.get("url"),
+                "title": session_data.get("title"),
+                "browser": session_data.get("environment", {}).get("browser"),
+                "platform": session_data.get("environment", {}).get("os"),
+                "createdAt": session_data.get("createdAt"),
+                "tags": session_data.get("tags", []),
             },
-            "consoleLogs": session.get("consoleLogs", [])[:10],  # First 10 logs
-            "networkRequests": session.get("networkRequests", [])[:10],  # First 10 requests
-            "analysis": analysis.get("analysis"),
+            "consoleLogs": console_logs[:10],  # First 10 logs
+            "networkRequests": network_requests[:10],  # First 10 requests
+            "analysis": analysis,
             "recommendations": [
                 "Check console errors for the root cause",
                 "Review network failed requests",
@@ -375,7 +398,6 @@ def main():
     print(f"API URL: {config.api_base_url}")
     print(f"API Key: {'*' * len(config.api_key) if config.api_key else 'NOT SET'}")
 
-    # Run with stdio transport (for Claude Code / other MCP clients)
     mcp.run(transport="stdio")
 
 

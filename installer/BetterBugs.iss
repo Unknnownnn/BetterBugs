@@ -17,7 +17,7 @@
 #define MyRootDir      ".."
 
 [Setup]
-AppId={{A3F7C2E1-88D4-4B9A-9C3E-F1D2E3B4C5A6}
+AppId={A3F7C2E1-88D4-4B9A-9C3E-F1D2E3B4C5A6}
 AppName={#MyAppName}
 AppVersion={#MyAppVersion}
 AppPublisher={#MyAppPublisher}

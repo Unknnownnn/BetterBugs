@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
@@ -31,9 +32,24 @@ import (
 // @in header
 // @name X-Project-Key
 func main() {
-	// Load environment variables
-	if err := godotenv.Load(); err != nil {
-		log.Println("No .env file found, using environment variables")
+	// Load environment variables from the executable's directory
+	if exePath, err := os.Executable(); err == nil {
+		exeDir := filepath.Dir(exePath)
+		envPath := filepath.Join(exeDir, ".env")
+		if err := godotenv.Load(envPath); err == nil {
+			log.Println("Loaded configuration from", envPath)
+		} else {
+			// Fallback to loading from current working directory
+			if err := godotenv.Load(); err == nil {
+				log.Println("Loaded configuration from current working directory")
+			} else {
+				log.Println("No .env file found, using environment variables")
+			}
+		}
+	} else {
+		if err := godotenv.Load(); err != nil {
+			log.Println("No .env file found, using environment variables")
+		}
 	}
 
 	// Load configuration

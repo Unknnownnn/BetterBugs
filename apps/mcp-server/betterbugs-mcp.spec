@@ -10,7 +10,7 @@ a = Analysis(
         *copy_metadata('mcp'),
         *copy_metadata('anyio'),
     ],
-    hiddenimports=['fastmcp', 'httpx', 'pydantic', 'dotenv'],
+    hiddenimports=['fastmcp', 'httpx', 'pydantic', 'dotenv', 'keyring'],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],

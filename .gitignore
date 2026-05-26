@@ -73,4 +73,6 @@ apps/mcp-server/test_tools.py
 
 # Python cache
 *.pyc
-*.pyo
+*.pyo
+BUILD_PLAN.md
+build-installer.bat

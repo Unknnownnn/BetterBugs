@@ -87,3 +87,5 @@ tmp/
 *.pem
 *.key
 !*.key.example
+
+/session_images/
